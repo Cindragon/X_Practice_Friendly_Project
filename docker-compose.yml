@@ -4,7 +4,8 @@ services:
     container_name: friendly_postgres
     restart: unless-stopped
     ports:
-      - "5432:5432"
+      # Host port 5433 to avoid conflicts with a local Postgres on 5432.
+      - "5433:5432"
     environment:
       POSTGRES_USER: friendly
       POSTGRES_PASSWORD: friendly
@@ -17,5 +18,24 @@ services:
       timeout: 5s
       retries: 10
 
+  mongo:
+    image: mongo:7
+    container_name: friendly_mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: friendly
+      MONGO_INITDB_ROOT_PASSWORD: friendly
+      MONGO_INITDB_DATABASE: friendly
+    volumes:
+      - friendly_mongodata:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "-u", "friendly", "-p", "friendly", "--authenticationDatabase", "admin", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
 volumes:
   friendly_pgdata:
+  friendly_mongodata:
