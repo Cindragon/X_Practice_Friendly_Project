@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: friendly_postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: friendly
+      POSTGRES_PASSWORD: friendly
+      POSTGRES_DB: friendly
+    volumes:
+      - friendly_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U friendly -d friendly"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  friendly_pgdata:
