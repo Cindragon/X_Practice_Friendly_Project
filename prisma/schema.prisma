@@ -18,16 +18,28 @@ datasource db {
 // One row per OAuth identity. Per spec, the same person logging in via
 // different providers becomes a different user (different userID).
 model User {
-  id        String   @id @default(cuid())
+  id String @id @default(cuid())
+
   // App-level handle (e.g. "ric2k1"). 3–15 chars, letters/digits/underscore,
-  // must not start with a digit. Validated in the API layer.
-  userID    String   @unique
+  // must not start with a digit. Nullable until the user completes the
+  // /setup-username step on their first OAuth sign-in.
+  userID String? @unique
+
   // Display name from OAuth provider (e.g. "Chung-Yang Ric Huang").
-  name      String
-  email     String?
+  name String?
+
+  // Per spec, the same email can map to multiple Users (one per provider),
+  // so this is intentionally NOT unique.
+  email         String?
+  emailVerified DateTime?
+
+  // `image` is populated by Auth.js from the OAuth provider; `avatarUrl`
+  // is the user-overridable avatar shown in the app.
+  image     String?
   avatarUrl String?
   bannerUrl String?
   bio       String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
