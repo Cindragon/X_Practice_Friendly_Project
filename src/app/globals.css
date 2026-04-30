@@ -1,8 +1,12 @@
 @import "tailwindcss";
 
+/* Friendly uses light mode as the primary theme. We intentionally do NOT
+ * follow `prefers-color-scheme: dark` — the design language is light-first.
+ * (A future "Dark" toggle can flip these vars.)
+ */
 :root {
   --background: #ffffff;
-  --foreground: #171717;
+  --foreground: #0f1419;
 }
 
 @theme inline {
@@ -12,11 +16,8 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  color-scheme: light;
 }
 
 body {

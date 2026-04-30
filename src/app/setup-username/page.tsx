@@ -13,12 +13,12 @@ export default async function SetupUsernamePage() {
   if (session.user.userID) redirect("/");
 
   return (
-    <main className="flex flex-1 items-center justify-center bg-black text-white">
-      <div className="w-full max-w-sm rounded-2xl border border-zinc-800 bg-zinc-950 p-8 shadow-xl">
+    <main className="flex flex-1 items-center justify-center bg-white text-zinc-900">
+      <div className="w-full max-w-sm rounded-2xl border border-zinc-200 bg-white p-8 shadow-md">
         <h1 className="text-2xl font-bold tracking-tight">
           Pick your handle
         </h1>
-        <p className="mt-2 text-sm text-zinc-400">
+        <p className="mt-2 text-sm text-zinc-600">
           This is how others on Friendly will find and mention you. You
           won&apos;t be able to change it later.
         </p>

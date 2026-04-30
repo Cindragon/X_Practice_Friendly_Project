@@ -27,10 +27,10 @@ export default async function LoginPage() {
   ];
 
   return (
-    <main className="flex flex-1 items-center justify-center bg-black text-white">
-      <div className="w-full max-w-sm rounded-2xl border border-zinc-800 bg-zinc-950 p-8 shadow-xl">
+    <main className="flex flex-1 items-center justify-center bg-white text-zinc-900">
+      <div className="w-full max-w-sm rounded-2xl border border-zinc-200 bg-white p-8 shadow-md">
         <h1 className="text-3xl font-bold tracking-tight">Friendly</h1>
-        <p className="mt-2 text-sm text-zinc-400">
+        <p className="mt-2 text-sm text-zinc-600">
           Sign in to start sharing what&apos;s happening.
         </p>
 
@@ -42,7 +42,7 @@ export default async function LoginPage() {
                 <button
                   type="submit"
                   disabled={!isEnabled}
-                  className="w-full rounded-full border border-zinc-700 bg-white px-4 py-2.5 text-sm font-medium text-black transition hover:bg-zinc-200 disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-500"
+                  className="w-full rounded-full border border-zinc-300 bg-white px-4 py-2.5 text-sm font-medium text-zinc-900 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:bg-zinc-100 disabled:text-zinc-400"
                 >
                   {PROVIDER_LABELS[provider]}
                   {!isEnabled && " (not configured)"}
@@ -53,7 +53,7 @@ export default async function LoginPage() {
         </div>
 
         {enabled.size === 0 && (
-          <p className="mt-6 rounded-lg bg-amber-950/50 p-3 text-xs text-amber-300">
+          <p className="mt-6 rounded-lg bg-amber-50 p-3 text-xs text-amber-700">
             No OAuth providers configured. Add at least one of
             <code className="mx-1">AUTH_GOOGLE_*</code>,
             <code className="mx-1">AUTH_GITHUB_*</code>, or
