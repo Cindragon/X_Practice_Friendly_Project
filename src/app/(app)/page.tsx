@@ -1,11 +1,33 @@
 import { requireUser } from "@/lib/session";
+import { loadHomeFeed, type FeedMode } from "@/lib/feed";
+import { HomeTabs } from "@/components/timeline/HomeTabs";
+import { TimelineList } from "@/components/timeline/TimelineList";
+
+type SearchParams = Promise<{ tab?: string; cursor?: string }>;
 
 /**
- * Home page (middle column). Real timeline lands in Step 8; this is a
- * Step-4 shell that confirms the layout works end to end.
+ * / — Home timeline.
+ *
+ * Reads ?tab=all|following and ?cursor=<objectId> from the URL so
+ * pagination state and tab choice survive reload + share + back-button.
+ * The actual data loading is in src/lib/feed.ts so the same code path
+ * powers /api/feed (for any future infinite-scroll UI).
  */
-export default async function HomePage() {
+export default async function HomePage({
+  searchParams,
+}: {
+  searchParams: SearchParams;
+}) {
   const user = await requireUser();
+  const sp = await searchParams;
+  const mode: FeedMode = sp.tab === "following" ? "following" : "all";
+  const cursor = sp.cursor ?? null;
+
+  const page = await loadHomeFeed({
+    mode,
+    viewerId: user.id,
+    cursor,
+  });
 
   return (
     <>
@@ -13,16 +35,8 @@ export default async function HomePage() {
         <h1 className="text-xl font-bold">Home</h1>
       </header>
 
-      <div className="flex flex-1 items-center justify-center p-12 text-center text-zinc-500">
-        <div>
-          <p className="text-zinc-700">
-            Welcome back, <span className="text-sky-600">@{user.userID}</span>.
-          </p>
-          <p className="mt-2 text-sm">
-            Timeline goes here once we wire posts up in Step 8.
-          </p>
-        </div>
-      </div>
+      <HomeTabs active={mode} />
+      <TimelineList page={page} mode={mode} />
     </>
   );
 }

@@ -47,6 +47,8 @@ PostSchema.index({ authorId: 1, createdAt: -1 });
 
 export type PostDoc = InferSchemaType<typeof PostSchema> & {
   _id: mongoose.Types.ObjectId;
+  createdAt: Date;
+  updatedAt: Date;
 };
 
 export const Post: Model<PostDoc> =
