@@ -1,33 +1,33 @@
-import NextAuth from "next-auth";
-import { NextResponse } from "next/server";
-import { authConfig } from "@/auth.config";
+import { NextResponse, type NextRequest } from "next/server";
 
 /**
  * Edge-runtime middleware.
  *
- * Two responsibilities:
- *   1. Redirect anonymous traffic on app routes to /login.
- *   2. Force authenticated users without a userID to /setup-username.
+ * We use the database session strategy (Session rows in Postgres), which
+ * means the `authjs.session-token` cookie is an opaque random token, not
+ * a JWE. The edge runtime can't run Prisma, so it can't look the token
+ * up — and if we let Auth.js try to decode it as a JWE we get
+ * `JWEInvalid: Invalid Compact JWE` after every login.
  *
- * We use the lightweight `authConfig` (no Prisma) because middleware can't
- * use Node-only APIs. Whether the userID is set is read from the JWT
- * (populated in src/auth.ts on first session creation) — but with database
- * sessions middleware only sees the session cookie's existence, not the
- * userID. To keep this edge-safe we treat "/setup-username" and "/login" as
- * always-allowed; the setup page itself reads the DB and redirects away if
- * userID is already set.
+ * So the middleware does a *soft* check: cookie present → let the request
+ * through and let the server component do the real auth (via auth() with
+ * the Prisma adapter, in src/lib/session.ts#requireUser). Cookie missing
+ * → redirect to /login.
  *
- * The "userID missing -> /setup-username" enforcement also lives in each
- * server-rendered page (via `auth()` in layout.tsx) for completeness.
+ * Pages: protected by default.
+ * /login, /setup-username: always public.
+ * /api/*, /_next/*, /favicon*: opt out — APIs return their own JSON 401s,
+ *   the others are static plumbing.
  */
 const PUBLIC_PATHS = new Set<string>(["/login", "/setup-username"]);
-// API routes manage their own auth and respond with JSON 401s — middleware
-// only protects rendered pages so unauth'd clients aren't redirected mid-fetch.
 const PUBLIC_PREFIXES = ["/api", "/_next", "/favicon"];
 
-const { auth } = NextAuth(authConfig);
+const SESSION_COOKIES = [
+  "authjs.session-token",
+  "__Secure-authjs.session-token",
+];
 
-export default auth((req) => {
+export default function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   if (PUBLIC_PREFIXES.some((p) => pathname.startsWith(p))) {
@@ -37,13 +37,13 @@ export default auth((req) => {
     return NextResponse.next();
   }
 
-  if (!req.auth) {
-    const url = new URL("/login", req.nextUrl.origin);
-    return NextResponse.redirect(url);
+  const hasSession = SESSION_COOKIES.some((name) => req.cookies.has(name));
+  if (!hasSession) {
+    return NextResponse.redirect(new URL("/login", req.nextUrl.origin));
   }
 
   return NextResponse.next();
-});
+}
 
 export const config = {
   // Run on every route except static assets.

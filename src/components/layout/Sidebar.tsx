@@ -26,8 +26,17 @@ export function Sidebar({ user }: SidebarProps) {
         </Link>
 
         <nav className="mt-2 flex flex-col gap-1">
-          <NavItem href="/" label="Home" Icon={Home} exact />
-          <NavItem href="/profile" label="Profile" Icon={User} />
+          <NavItem
+            href="/"
+            label="Home"
+            icon={<Home className="h-7 w-7" aria-hidden />}
+            exact
+          />
+          <NavItem
+            href="/profile"
+            label="Profile"
+            icon={<User className="h-7 w-7" aria-hidden />}
+          />
         </nav>
 
         <PostButton />

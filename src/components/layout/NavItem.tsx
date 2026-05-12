@@ -2,13 +2,20 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { LucideIcon } from "lucide-react";
+import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 type NavItemProps = {
   href: string;
   label: string;
-  Icon: LucideIcon;
+  /**
+   * A pre-rendered icon element (e.g. <Home className="h-7 w-7" />).
+   *
+   * We accept a node — not a `LucideIcon` component reference — because
+   * server → client component boundaries can serialise JSX elements but
+   * NOT raw component functions. Next.js 16 enforces this strictly.
+   */
+  icon: ReactNode;
   /** Match the route exactly instead of by prefix (used for "/" home). */
   exact?: boolean;
 };
@@ -17,7 +24,7 @@ type NavItemProps = {
  * Sidebar navigation row — icon + label, fills the rail width on desktop.
  * Active route is bolded; inactive rows highlight on hover (X-style).
  */
-export function NavItem({ href, label, Icon, exact = false }: NavItemProps) {
+export function NavItem({ href, label, icon, exact = false }: NavItemProps) {
   const pathname = usePathname();
   const active = exact ? pathname === href : pathname.startsWith(href);
 
@@ -30,11 +37,7 @@ export function NavItem({ href, label, Icon, exact = false }: NavItemProps) {
         active && "font-bold"
       )}
     >
-      <Icon
-        className="h-7 w-7 shrink-0"
-        strokeWidth={active ? 2.5 : 2}
-        aria-hidden
-      />
+      <span className="shrink-0">{icon}</span>
       <span className="hidden xl:inline">{label}</span>
     </Link>
   );
