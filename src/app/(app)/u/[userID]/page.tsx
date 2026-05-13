@@ -5,6 +5,7 @@ import { ProfileHeader } from "@/components/profile/ProfileHeader";
 import { ProfileTabs } from "@/components/profile/ProfileTabs";
 import { FollowButton } from "@/components/profile/FollowButton";
 import { EmptyTab } from "@/components/profile/EmptyTab";
+import { LikesTab } from "@/components/profile/LikesTab";
 
 type Params = { params: Promise<{ userID: string }> };
 
@@ -50,7 +51,13 @@ export default async function UserProfilePage({ params }: Params) {
 
       <ProfileTabs
         postsSlot={<EmptyTab message="No posts yet." />}
-        likesSlot={<EmptyTab message="No likes yet." />}
+        likesSlot={
+          <LikesTab
+            ownerId={profile.id}
+            viewerId={viewerId}
+            emptyMessage="No likes yet."
+          />
+        }
       />
     </>
   );

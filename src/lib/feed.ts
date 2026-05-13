@@ -408,6 +408,157 @@ export async function loadPostById(
 }
 
 /**
+ * Posts liked by a given user, newest like first.
+ *
+ * Source of truth is Postgres' Like table (the Mongo Post lives
+ * elsewhere). We page on the Like row's createdAt: the cursor is the
+ * ISO timestamp of the last like seen, so "load more" picks up
+ * strictly older likes. Soft-deleted posts are filtered out — a
+ * tombstone in the Likes tab would just be confusing.
+ */
+export async function loadLikedByUser(
+  userId: string,
+  viewerId: string | null | undefined,
+  opts: { cursor?: string | null; limit?: number } = {}
+): Promise<FeedPage> {
+  const limit = Math.min(MAX_LIMIT, Math.max(1, opts.limit ?? DEFAULT_LIMIT));
+  const cursorDate =
+    opts.cursor && !Number.isNaN(Date.parse(opts.cursor))
+      ? new Date(opts.cursor)
+      : null;
+
+  const likes = await prisma.like.findMany({
+    where: {
+      userId,
+      ...(cursorDate ? { createdAt: { lt: cursorDate } } : {}),
+    },
+    orderBy: { createdAt: "desc" },
+    take: limit + 1,
+    select: { postId: true, createdAt: true },
+  });
+
+  const hasMore = likes.length > limit;
+  const slice = hasMore ? likes.slice(0, limit) : likes;
+  const nextCursor = hasMore
+    ? slice[slice.length - 1].createdAt.toISOString()
+    : null;
+  if (slice.length === 0) return { items: [], nextCursor: null };
+
+  await connectMongo();
+
+  // Fetch the corresponding Mongo posts. We do NOT filter by parentId
+  // here — a liked reply should still appear in the tab.
+  const ids = slice.map((l) => new mongoose.Types.ObjectId(l.postId));
+  const posts = await Post.find({
+    _id: { $in: ids },
+    deletedAt: null,
+  }).lean<PostDoc[]>();
+  const postById = new Map<string, PostDoc>(
+    posts.map((p) => [String(p._id), p])
+  );
+
+  // Preserve the like-order (newest like first) rather than Mongo's
+  // natural id order.
+  const ordered = slice
+    .map((l) => postById.get(l.postId))
+    .filter((p): p is PostDoc => !!p);
+  if (ordered.length === 0) return { items: [], nextCursor };
+
+  // Batch-hydrate authors + per-post counts, same shape as loadHomeFeed.
+  const authorIds = Array.from(new Set(ordered.map((p) => p.authorId)));
+  const visibleIds = ordered.map((p) => String(p._id));
+
+  const [authors, replyAgg, repostAgg, likeRows] = await Promise.all([
+    prisma.user.findMany({
+      where: { id: { in: authorIds } },
+      select: {
+        id: true,
+        userID: true,
+        name: true,
+        image: true,
+        avatarUrl: true,
+      },
+    }),
+    Post.aggregate<{ _id: mongoose.Types.ObjectId; n: number }>([
+      {
+        $match: {
+          parentId: {
+            $in: visibleIds.map((i) => new mongoose.Types.ObjectId(i)),
+          },
+          deletedAt: null,
+        },
+      },
+      { $group: { _id: "$parentId", n: { $sum: 1 } } },
+    ]),
+    Post.aggregate<{ _id: mongoose.Types.ObjectId; n: number }>([
+      {
+        $match: {
+          repostOfId: {
+            $in: visibleIds.map((i) => new mongoose.Types.ObjectId(i)),
+          },
+          deletedAt: null,
+        },
+      },
+      { $group: { _id: "$repostOfId", n: { $sum: 1 } } },
+    ]),
+    prisma.like.groupBy({
+      by: ["postId"],
+      where: { postId: { in: visibleIds } },
+      _count: { _all: true },
+    }),
+  ]);
+
+  const authorById = new Map<string, FeedAuthor>(
+    authors
+      .filter((a) => !!a.userID)
+      .map((a) => [
+        a.id,
+        {
+          id: a.id,
+          userID: a.userID as string,
+          name: a.name,
+          avatarUrl: a.avatarUrl ?? a.image ?? null,
+        },
+      ])
+  );
+  const repliesBy = new Map(replyAgg.map((r) => [String(r._id), r.n]));
+  const repostsBy = new Map(repostAgg.map((r) => [String(r._id), r.n]));
+  const likesBy = new Map(likeRows.map((r) => [r.postId, r._count._all]));
+
+  let likedSet = new Set<string>();
+  if (viewerId) {
+    const rows = await prisma.like.findMany({
+      where: { userId: viewerId, postId: { in: visibleIds } },
+      select: { postId: true },
+    });
+    likedSet = new Set(rows.map((r) => r.postId));
+  }
+
+  return {
+    items: ordered.map((p) => {
+      const pid = String(p._id);
+      return {
+        id: pid,
+        content: p.content,
+        deleted: false,
+        parentId: p.parentId ? String(p.parentId) : null,
+        repostOfId: p.repostOfId ? String(p.repostOfId) : null,
+        createdAt: p.createdAt,
+        author: authorById.get(p.authorId) ?? null,
+        repostOf: null,
+        counts: {
+          replies: repliesBy.get(pid) ?? 0,
+          reposts: repostsBy.get(pid) ?? 0,
+          likes: likesBy.get(pid) ?? 0,
+        },
+        likedByMe: likedSet.has(pid),
+      };
+    }),
+    nextCursor,
+  };
+}
+
+/**
  * Direct children of a post (one level deep). Sorted oldest → newest so
  * threads read top-down, matching how Twitter / Threads display replies.
  * Cursor pagination uses the same `_id`-based scheme, but ascending.

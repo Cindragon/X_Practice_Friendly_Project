@@ -111,7 +111,10 @@ export function PostComposerModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-zinc-900/40 p-4 pt-20"
+      // z-[100] sits above any stacking context the page might create
+      // (sticky headers, backdrop-blur layers, sidebar cards). 80% black
+      // tint + blur makes everything behind clearly inert / unclickable.
+      className="fixed inset-0 z-[100] flex items-start justify-center bg-zinc-900/80 p-4 pt-20 backdrop-blur-sm"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -120,7 +123,11 @@ export function PostComposerModal({
         role="dialog"
         aria-modal="true"
         aria-label={parentId ? "Reply" : "New post"}
-        className="w-full max-w-xl rounded-2xl bg-white p-5 shadow-xl"
+        // Inline backgroundColor as a belt-and-braces guard against any
+        // Tailwind purge / specificity glitch making bg-white look
+        // semi-transparent in dev.
+        style={{ backgroundColor: "#ffffff" }}
+        className="relative w-full max-w-xl rounded-2xl p-5 shadow-2xl ring-1 ring-zinc-200"
       >
         <div className="mb-3 flex items-center justify-between">
           <h3 className="text-base font-bold">
@@ -144,7 +151,7 @@ export function PostComposerModal({
             parentId ? "Post your reply" : "Share what's on your mind…"
           }
           rows={5}
-          className="w-full resize-none rounded-lg border border-zinc-200 px-3 py-2 text-[15px] leading-snug outline-none focus:border-sky-400"
+          className="w-full resize-none rounded-lg border border-zinc-200 bg-white px-3 py-2 text-[15px] leading-snug outline-none focus:border-sky-400"
           maxLength={10_000}
         />
 

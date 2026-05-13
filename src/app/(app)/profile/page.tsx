@@ -5,6 +5,7 @@ import { ProfileHeader } from "@/components/profile/ProfileHeader";
 import { ProfileTabs } from "@/components/profile/ProfileTabs";
 import { EditProfileModal } from "@/components/profile/EditProfileModal";
 import { EmptyTab } from "@/components/profile/EmptyTab";
+import { LikesTab } from "@/components/profile/LikesTab";
 
 /**
  * /profile — viewing your own profile.
@@ -44,7 +45,13 @@ export default async function MyProfilePage() {
 
       <ProfileTabs
         postsSlot={<EmptyTab message="You haven't posted yet." />}
-        likesSlot={<EmptyTab message="Posts you like will show here." />}
+        likesSlot={
+          <LikesTab
+            ownerId={profile.id}
+            viewerId={me.id}
+            emptyMessage="Posts you like will show here."
+          />
+        }
       />
     </>
   );
