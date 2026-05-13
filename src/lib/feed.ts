@@ -249,3 +249,298 @@ export async function loadHomeFeed(opts: {
     nextCursor,
   };
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Single-post + replies loaders for /post/[id].
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type FocusedPostView = FeedItem & {
+  /** Snippet of the parent so /post/[id] can show "Replying to @x". */
+  parent: {
+    id: string;
+    authorHandle: string | null;
+  } | null;
+};
+
+/** Helper: shape a single PostDoc with all the same hydration as the feed. */
+async function shapeOne(
+  post: PostDoc,
+  viewerId: string | null | undefined
+): Promise<FeedItem> {
+  const id = String(post._id);
+
+  // Author + (if repost) original post + original author.
+  const target = post.repostOfId
+    ? await Post.findById(post.repostOfId).lean<PostDoc | null>()
+    : null;
+
+  const authorIds = new Set<string>([post.authorId]);
+  if (target) authorIds.add(target.authorId);
+
+  const authors = await prisma.user.findMany({
+    where: { id: { in: Array.from(authorIds) } },
+    select: {
+      id: true,
+      userID: true,
+      name: true,
+      image: true,
+      avatarUrl: true,
+    },
+  });
+  const authorById = new Map<string, FeedAuthor>(
+    authors
+      .filter((a) => !!a.userID)
+      .map((a) => [
+        a.id,
+        {
+          id: a.id,
+          userID: a.userID as string,
+          name: a.name,
+          avatarUrl: a.avatarUrl ?? a.image ?? null,
+        },
+      ])
+  );
+
+  const ids = target ? [id, String(target._id)] : [id];
+  const [repliesArr, repostsArr, likes] = await Promise.all([
+    Post.aggregate<{ _id: mongoose.Types.ObjectId; n: number }>([
+      {
+        $match: {
+          parentId: { $in: ids.map((i) => new mongoose.Types.ObjectId(i)) },
+          deletedAt: null,
+        },
+      },
+      { $group: { _id: "$parentId", n: { $sum: 1 } } },
+    ]),
+    Post.aggregate<{ _id: mongoose.Types.ObjectId; n: number }>([
+      {
+        $match: {
+          repostOfId: { $in: ids.map((i) => new mongoose.Types.ObjectId(i)) },
+          deletedAt: null,
+        },
+      },
+      { $group: { _id: "$repostOfId", n: { $sum: 1 } } },
+    ]),
+    prisma.like.groupBy({
+      by: ["postId"],
+      where: { postId: { in: ids } },
+      _count: { _all: true },
+    }),
+  ]);
+  const repliesBy = new Map(repliesArr.map((r) => [String(r._id), r.n]));
+  const repostsBy = new Map(repostsArr.map((r) => [String(r._id), r.n]));
+  const likesBy = new Map(likes.map((r) => [r.postId, r._count._all]));
+
+  let likedSet = new Set<string>();
+  if (viewerId) {
+    const rows = await prisma.like.findMany({
+      where: { userId: viewerId, postId: { in: ids } },
+      select: { postId: true },
+    });
+    likedSet = new Set(rows.map((r) => r.postId));
+  }
+
+  function shapeInner(p: PostDoc): FeedItem {
+    const pid = String(p._id);
+    return {
+      id: pid,
+      content: p.deletedAt ? "" : p.content,
+      deleted: !!p.deletedAt,
+      parentId: p.parentId ? String(p.parentId) : null,
+      repostOfId: p.repostOfId ? String(p.repostOfId) : null,
+      createdAt: p.createdAt,
+      author: authorById.get(p.authorId) ?? null,
+      repostOf: null, // filled below for the outer item
+      counts: {
+        replies: repliesBy.get(pid) ?? 0,
+        reposts: repostsBy.get(pid) ?? 0,
+        likes: likesBy.get(pid) ?? 0,
+      },
+      likedByMe: likedSet.has(pid),
+    };
+  }
+
+  const item = shapeInner(post);
+  if (target) item.repostOf = shapeInner(target);
+  return item;
+}
+
+/**
+ * GET-shape loader for /post/[id]. Returns the focused post (with all
+ * its counts), plus a small snippet of its parent so the page can render
+ * "Replying to @parentAuthor".
+ *
+ * Returns null when the id is unknown. A *soft-deleted* post still
+ * resolves — we want to render the deleted placeholder so the rest of
+ * the thread isn't orphaned.
+ */
+export async function loadPostById(
+  id: string,
+  viewerId: string | null | undefined
+): Promise<FocusedPostView | null> {
+  if (!OBJECT_ID_RE.test(id)) return null;
+  await connectMongo();
+  const post = await Post.findById(id).lean<PostDoc | null>();
+  if (!post) return null;
+
+  const base = await shapeOne(post, viewerId);
+
+  let parent: FocusedPostView["parent"] = null;
+  if (post.parentId) {
+    const p = await Post.findById(post.parentId)
+      .select({ authorId: 1 })
+      .lean<{ authorId: string } | null>();
+    if (p) {
+      const pa = await prisma.user.findUnique({
+        where: { id: p.authorId },
+        select: { userID: true },
+      });
+      parent = {
+        id: String(post.parentId),
+        authorHandle: pa?.userID ?? null,
+      };
+    } else {
+      parent = { id: String(post.parentId), authorHandle: null };
+    }
+  }
+
+  return { ...base, parent };
+}
+
+/**
+ * Direct children of a post (one level deep). Sorted oldest → newest so
+ * threads read top-down, matching how Twitter / Threads display replies.
+ * Cursor pagination uses the same `_id`-based scheme, but ascending.
+ */
+export async function loadReplies(
+  parentId: string,
+  viewerId: string | null | undefined,
+  opts: { cursor?: string | null; limit?: number } = {}
+): Promise<FeedPage> {
+  if (!OBJECT_ID_RE.test(parentId)) {
+    return { items: [], nextCursor: null };
+  }
+  const limit = Math.min(MAX_LIMIT, Math.max(1, opts.limit ?? DEFAULT_LIMIT));
+  const cursor =
+    opts.cursor && OBJECT_ID_RE.test(opts.cursor) ? opts.cursor : null;
+
+  await connectMongo();
+  const query: Record<string, unknown> = {
+    parentId: new mongoose.Types.ObjectId(parentId),
+    deletedAt: null,
+  };
+  if (cursor) {
+    // ASC pagination: cursor is the last seen _id, fetch _id > cursor.
+    query._id = { $gt: new mongoose.Types.ObjectId(cursor) };
+  }
+
+  const raw = await Post.find(query)
+    .sort({ _id: 1 })
+    .limit(limit + 1)
+    .lean<PostDoc[]>();
+
+  const hasMore = raw.length > limit;
+  const slice = hasMore ? raw.slice(0, limit) : raw;
+  const nextCursor = hasMore ? String(slice[slice.length - 1]._id) : null;
+
+  // Reuse the per-page batching from the home feed for these replies.
+  const authorIds = Array.from(new Set(slice.map((p) => p.authorId)));
+  const ids = slice.map((p) => String(p._id));
+
+  const [authors, replyAgg, repostAgg, likeRows] = await Promise.all([
+    authorIds.length
+      ? prisma.user.findMany({
+          where: { id: { in: authorIds } },
+          select: {
+            id: true,
+            userID: true,
+            name: true,
+            image: true,
+            avatarUrl: true,
+          },
+        })
+      : [],
+    ids.length
+      ? Post.aggregate<{ _id: mongoose.Types.ObjectId; n: number }>([
+          {
+            $match: {
+              parentId: {
+                $in: ids.map((i) => new mongoose.Types.ObjectId(i)),
+              },
+              deletedAt: null,
+            },
+          },
+          { $group: { _id: "$parentId", n: { $sum: 1 } } },
+        ])
+      : [],
+    ids.length
+      ? Post.aggregate<{ _id: mongoose.Types.ObjectId; n: number }>([
+          {
+            $match: {
+              repostOfId: {
+                $in: ids.map((i) => new mongoose.Types.ObjectId(i)),
+              },
+              deletedAt: null,
+            },
+          },
+          { $group: { _id: "$repostOfId", n: { $sum: 1 } } },
+        ])
+      : [],
+    ids.length
+      ? prisma.like.groupBy({
+          by: ["postId"],
+          where: { postId: { in: ids } },
+          _count: { _all: true },
+        })
+      : [],
+  ]);
+
+  const authorById = new Map<string, FeedAuthor>(
+    authors
+      .filter((a) => !!a.userID)
+      .map((a) => [
+        a.id,
+        {
+          id: a.id,
+          userID: a.userID as string,
+          name: a.name,
+          avatarUrl: a.avatarUrl ?? a.image ?? null,
+        },
+      ])
+  );
+  const repliesBy = new Map(replyAgg.map((r) => [String(r._id), r.n]));
+  const repostsBy = new Map(repostAgg.map((r) => [String(r._id), r.n]));
+  const likesBy = new Map(likeRows.map((r) => [r.postId, r._count._all]));
+
+  let likedSet = new Set<string>();
+  if (viewerId && ids.length) {
+    const rows = await prisma.like.findMany({
+      where: { userId: viewerId, postId: { in: ids } },
+      select: { postId: true },
+    });
+    likedSet = new Set(rows.map((r) => r.postId));
+  }
+
+  return {
+    items: slice.map((p) => {
+      const pid = String(p._id);
+      return {
+        id: pid,
+        content: p.deletedAt ? "" : p.content,
+        deleted: !!p.deletedAt,
+        parentId: p.parentId ? String(p.parentId) : null,
+        repostOfId: p.repostOfId ? String(p.repostOfId) : null,
+        createdAt: p.createdAt,
+        author: authorById.get(p.authorId) ?? null,
+        repostOf: null,
+        counts: {
+          replies: repliesBy.get(pid) ?? 0,
+          reposts: repostsBy.get(pid) ?? 0,
+          likes: likesBy.get(pid) ?? 0,
+        },
+        likedByMe: likedSet.has(pid),
+      };
+    }),
+    nextCursor,
+  };
+}

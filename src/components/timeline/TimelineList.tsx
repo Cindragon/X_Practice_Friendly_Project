@@ -10,9 +10,11 @@ import type { FeedPage, FeedMode } from "@/lib/feed";
 export function TimelineList({
   page,
   mode,
+  viewerId,
 }: {
   page: FeedPage;
   mode: FeedMode;
+  viewerId: string | null;
 }) {
   if (page.items.length === 0) {
     return (
@@ -25,7 +27,7 @@ export function TimelineList({
       <ol>
         {page.items.map((item) => (
           <li key={item.id}>
-            <PostCard item={item} />
+            <PostCard item={item} viewerId={viewerId} />
           </li>
         ))}
       </ol>

@@ -36,7 +36,7 @@ export default async function HomePage({
       </header>
 
       <HomeTabs active={mode} />
-      <TimelineList page={page} mode={mode} />
+      <TimelineList page={page} mode={mode} viewerId={user.id} />
     </>
   );
 }
