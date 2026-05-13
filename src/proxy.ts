@@ -1,7 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 /**
- * Edge-runtime middleware.
+ * Routing proxy (formerly `middleware.ts` — Next.js 16 renamed the
+ * convention; behaviour is identical).
  *
  * We use the database session strategy (Session rows in Postgres), which
  * means the `authjs.session-token` cookie is an opaque random token, not
@@ -9,7 +10,7 @@ import { NextResponse, type NextRequest } from "next/server";
  * up — and if we let Auth.js try to decode it as a JWE we get
  * `JWEInvalid: Invalid Compact JWE` after every login.
  *
- * So the middleware does a *soft* check: cookie present → let the request
+ * So this file does a *soft* check: cookie present → let the request
  * through and let the server component do the real auth (via auth() with
  * the Prisma adapter, in src/lib/session.ts#requireUser). Cookie missing
  * → redirect to /login.
@@ -27,7 +28,7 @@ const SESSION_COOKIES = [
   "__Secure-authjs.session-token",
 ];
 
-export default function middleware(req: NextRequest) {
+export default function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   if (PUBLIC_PREFIXES.some((p) => pathname.startsWith(p))) {

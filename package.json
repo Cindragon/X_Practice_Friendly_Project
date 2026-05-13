@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "build:prod": "prisma migrate deploy && next build",
     "start": "next start",
     "lint": "eslint",
     "db:up": "docker compose up -d",
