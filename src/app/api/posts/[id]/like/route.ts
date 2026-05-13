@@ -9,6 +9,12 @@ import {
   ok,
   unauthorized,
 } from "@/lib/api";
+import { triggerSafe } from "@/lib/pusher-server";
+import {
+  POST_EVENT_LIKE_CHANGED,
+  postChannel,
+  type PostLikeChangedPayload,
+} from "@/lib/realtime-events";
 
 type Ctx = { params: Promise<{ id: string }> };
 const OBJECT_ID_RE = /^[a-fA-F0-9]{24}$/;
@@ -38,6 +44,15 @@ export async function POST(_req: Request, ctx: Ctx) {
     await prisma.like.create({
       data: { userId: session.user.id, postId: id },
     });
+    await triggerSafe(
+      postChannel(id),
+      POST_EVENT_LIKE_CHANGED,
+      {
+        postId: id,
+        delta: 1,
+        byUserId: session.user.id,
+      } satisfies PostLikeChangedPayload
+    );
     return ok({ liked: true, alreadyLiked: false });
   } catch (err) {
     if (
@@ -58,8 +73,19 @@ export async function DELETE(_req: Request, ctx: Ctx) {
   const session = await auth();
   if (!session?.user) return unauthorized();
 
-  await prisma.like.deleteMany({
+  const res = await prisma.like.deleteMany({
     where: { userId: session.user.id, postId: id },
   });
+  if (res.count > 0) {
+    await triggerSafe(
+      postChannel(id),
+      POST_EVENT_LIKE_CHANGED,
+      {
+        postId: id,
+        delta: -1,
+        byUserId: session.user.id,
+      } satisfies PostLikeChangedPayload
+    );
+  }
   return ok({ liked: false });
 }

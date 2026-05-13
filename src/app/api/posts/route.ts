@@ -17,6 +17,17 @@ import {
   extractHashtags,
   extractMentions,
 } from "@/lib/post-text";
+import { triggerSafe } from "@/lib/pusher-server";
+import {
+  HOME_CHANNEL,
+  HOME_EVENT_POST_CREATED,
+  POST_EVENT_REPLY_CREATED,
+  POST_EVENT_REPOST_CHANGED,
+  postChannel,
+  type HomePostCreatedPayload,
+  type PostReplyCreatedPayload,
+  type PostRepostChangedPayload,
+} from "@/lib/realtime-events";
 
 /**
  * POST /api/posts
@@ -69,6 +80,13 @@ export async function POST(req: Request) {
       content: "",
       repostOfId,
     });
+
+    await triggerSafe(
+      postChannel(repostOfId),
+      POST_EVENT_REPOST_CHANGED,
+      { postId: repostOfId, delta: 1 } satisfies PostRepostChangedPayload
+    );
+
     return created({ id: String(doc._id), alreadyReposted: false });
   }
 
@@ -99,6 +117,29 @@ export async function POST(req: Request) {
     mentions: extractMentions(trimmed),
     hashtags: extractHashtags(trimmed),
   });
+
+  if (parentId) {
+    // Reply → notify viewers of the parent thread.
+    await triggerSafe(
+      postChannel(parentId),
+      POST_EVENT_REPLY_CREATED,
+      {
+        parentId,
+        replyId: String(doc._id),
+        authorId: session.user.id,
+      } satisfies PostReplyCreatedPayload
+    );
+  } else {
+    // Top-level → home timeline subscribers learn about it.
+    await triggerSafe(
+      HOME_CHANNEL,
+      HOME_EVENT_POST_CREATED,
+      {
+        postId: String(doc._id),
+        authorId: session.user.id,
+      } satisfies HomePostCreatedPayload
+    );
+  }
 
   return created({ id: String(doc._id) });
 }

@@ -6,6 +6,7 @@ import { loadPostById, loadReplies } from "@/lib/feed";
 import { FocusedPost } from "@/components/post/FocusedPost";
 import { PostCard } from "@/components/post/PostCard";
 import { ReplyComposerInline } from "@/components/composer/ReplyComposerInline";
+import { PostRealtime } from "@/components/realtime/PostRealtime";
 
 type Params = {
   params: Promise<{ id: string }>;
@@ -55,6 +56,8 @@ export default async function PostDetailPage({
         </Link>
         <h1 className="text-xl font-bold">Post</h1>
       </header>
+
+      <PostRealtime postId={post.id} viewerId={viewerId} />
 
       <FocusedPost post={post} viewerId={viewerId} />
 

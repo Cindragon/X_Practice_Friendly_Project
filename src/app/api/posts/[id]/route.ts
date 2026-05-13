@@ -10,6 +10,12 @@ import {
   ok,
   unauthorized,
 } from "@/lib/api";
+import { triggerSafe } from "@/lib/pusher-server";
+import {
+  POST_EVENT_DELETED,
+  postChannel,
+  type PostDeletedPayload,
+} from "@/lib/realtime-events";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -101,7 +107,8 @@ export async function DELETE(_req: Request, ctx: Ctx) {
   if (!post) return notFound("Post not found");
   if (post.authorId !== session.user.id) return forbidden();
 
-  if (!post.deletedAt) {
+  const wasAlreadyDeleted = !!post.deletedAt;
+  if (!wasAlreadyDeleted) {
     post.deletedAt = new Date();
     await post.save();
   }
@@ -109,6 +116,14 @@ export async function DELETE(_req: Request, ctx: Ctx) {
   // Also clear any likes so counts stay accurate. Mongo-side post id is the
   // string form of ObjectId, same as we store in Postgres' Like.postId.
   await prisma.like.deleteMany({ where: { postId: id } });
+
+  if (!wasAlreadyDeleted) {
+    await triggerSafe(
+      postChannel(id),
+      POST_EVENT_DELETED,
+      { postId: id } satisfies PostDeletedPayload
+    );
+  }
 
   return ok({ deleted: true });
 }

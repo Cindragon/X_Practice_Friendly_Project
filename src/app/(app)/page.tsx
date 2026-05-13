@@ -2,6 +2,7 @@ import { requireUser } from "@/lib/session";
 import { loadHomeFeed, type FeedMode } from "@/lib/feed";
 import { HomeTabs } from "@/components/timeline/HomeTabs";
 import { TimelineList } from "@/components/timeline/TimelineList";
+import { TimelineRealtime } from "@/components/realtime/TimelineRealtime";
 
 type SearchParams = Promise<{ tab?: string; cursor?: string }>;
 
@@ -36,6 +37,7 @@ export default async function HomePage({
       </header>
 
       <HomeTabs active={mode} />
+      <TimelineRealtime viewerId={user.id} />
       <TimelineList page={page} mode={mode} viewerId={user.id} />
     </>
   );
