@@ -10,6 +10,13 @@ type Props = {
   onClose: () => void;
   /** Reply target — when set, the composer creates a reply not a top-level post. */
   parentId?: string;
+  /**
+   * Called after a successful post submission, before onClose / refresh.
+   * Lets the parent perform optimistic UI updates (e.g. bump the reply
+   * count on the action bar so the viewer sees an immediate change
+   * without waiting for router.refresh).
+   */
+  onPostSuccess?: () => void;
 };
 
 /**
@@ -22,7 +29,11 @@ type Props = {
  * "Save draft" stores the in-progress text in Mongo so the user can pick
  * it up later. Drafts are NOT auto-loaded — that's a Step 8+ concern.
  */
-export function PostComposerModal({ onClose, parentId }: Props) {
+export function PostComposerModal({
+  onClose,
+  parentId,
+  onPostSuccess,
+}: Props) {
   const router = useRouter();
   const [text, setText] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -64,6 +75,7 @@ export function PostComposerModal({ onClose, parentId }: Props) {
         setError(json.error ?? "Failed to post");
         return;
       }
+      onPostSuccess?.();
       onClose();
       router.refresh();
     } catch {
